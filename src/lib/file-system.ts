@@ -16,10 +16,14 @@ export interface SerializedFileNode {
 const ROOT_PATH = "/";
 const PATH_SEPARATOR = "/";
 const DEFAULT_FILE_CONTENT = "";
+const MAX_FILE_SIZE = 1024 * 1024; // 1MB
+const ALLOWED_EXTENSIONS = ['.js', '.jsx', '.ts', '.tsx', '.css', '.json', '.html', '.md', '.txt'];
 
 export class VirtualFileSystem {
   private files: Map<string, FileNode> = new Map();
   private root: FileNode;
+  private serializedCache: string | null = null;
+  private cacheVersion = 0;
 
   constructor() {
     this.root = {
@@ -29,6 +33,51 @@ export class VirtualFileSystem {
       children: new Map(),
     };
     this.files.set("/", this.root);
+  }
+
+  private sanitizePath(path: string): string {
+    // Prevent directory traversal attacks
+    const normalized = this.normalizePath(path);
+    if (normalized.includes('..') || normalized.includes('~')) {
+      throw new Error('Invalid path: directory traversal not allowed');
+    }
+    
+    // Check for null bytes and other dangerous characters
+    if (/[\x00-\x1f<>:"|?*]/.test(normalized)) {
+      throw new Error('Invalid path: contains illegal characters');
+    }
+    
+    // Ensure path length is reasonable
+    if (normalized.length > 1000) {
+      throw new Error('Invalid path: path too long');
+    }
+    
+    return normalized;
+  }
+
+  private isFilePath(path: string): boolean {
+    // Consider a path a file if it has an extension
+    return path.includes('.') && !path.endsWith('/');
+  }
+
+  private validateFileContent(path: string, content: string): void {
+    // Only validate if there's actually an extension
+    if (path.includes('.')) {
+      const extension = path.toLowerCase().substring(path.lastIndexOf('.'));
+      if (extension && !ALLOWED_EXTENSIONS.includes(extension)) {
+        throw new Error(`File type not allowed: ${extension}`);
+      }
+    }
+    
+    // Check file size
+    if (content.length > MAX_FILE_SIZE) {
+      throw new Error('File size exceeds maximum allowed size (1MB)');
+    }
+    
+    // Check for dangerous content patterns (basic script injection prevention)
+    if (/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi.test(content)) {
+      throw new Error('File content contains potentially dangerous scripts');
+    }
   }
 
   private normalizePath(path: string): string {
@@ -61,7 +110,11 @@ export class VirtualFileSystem {
   }
 
   createFile(path: string, content: string = DEFAULT_FILE_CONTENT): FileNode | null {
-    const normalized = this.normalizePath(path);
+    const normalized = this.sanitizePath(path);
+    // Only validate content for actual files, not directory tests
+    if (content !== DEFAULT_FILE_CONTENT || this.isFilePath(normalized)) {
+      this.validateFileContent(normalized, content);
+    }
 
     // Check if file already exists
     if (this.files.has(normalized)) {
@@ -94,12 +147,13 @@ export class VirtualFileSystem {
 
     this.files.set(normalized, file);
     parent.children!.set(fileName, file);
+    this.invalidateCache();
 
     return file;
   }
 
   createDirectory(path: string): FileNode | null {
-    const normalized = this.normalizePath(path);
+    const normalized = this.sanitizePath(path);
 
     // Check if directory already exists
     if (this.files.has(normalized)) {
@@ -121,12 +175,13 @@ export class VirtualFileSystem {
 
     this.files.set(normalized, directory);
     parent.children!.set(dirName, directory);
+    this.invalidateCache();
 
     return directory;
   }
 
   readFile(path: string): string | null {
-    const normalized = this.normalizePath(path);
+    const normalized = this.sanitizePath(path);
     const file = this.files.get(normalized);
 
     if (!file || file.type !== "file") {
@@ -137,19 +192,22 @@ export class VirtualFileSystem {
   }
 
   updateFile(path: string, content: string): boolean {
-    const normalized = this.normalizePath(path);
+    const normalized = this.sanitizePath(path);
     const file = this.files.get(normalized);
 
     if (!file || file.type !== "file") {
       return false;
     }
 
+    // Only validate content for actual file updates
+    this.validateFileContent(normalized, content);
     file.content = content;
+    this.invalidateCache();
     return true;
   }
 
   deleteFile(path: string): boolean {
-    const normalized = this.normalizePath(path);
+    const normalized = this.sanitizePath(path);
     const file = this.files.get(normalized);
 
     if (!file || normalized === "/") {
@@ -170,13 +228,14 @@ export class VirtualFileSystem {
 
     parent.children!.delete(file.name);
     this.files.delete(normalized);
+    this.invalidateCache();
 
     return true;
   }
 
   rename(oldPath: string, newPath: string): boolean {
-    const normalizedOld = this.normalizePath(oldPath);
-    const normalizedNew = this.normalizePath(newPath);
+    const normalizedOld = this.sanitizePath(oldPath);
+    const normalizedNew = this.sanitizePath(newPath);
 
     // Can't rename root
     if (normalizedOld === "/" || normalizedNew === "/") {
@@ -239,6 +298,7 @@ export class VirtualFileSystem {
     if (sourceNode.type === "directory" && sourceNode.children) {
       this.updateChildrenPaths(sourceNode);
     }
+    this.invalidateCache();
 
     return true;
   }
@@ -262,17 +322,17 @@ export class VirtualFileSystem {
   }
 
   exists(path: string): boolean {
-    const normalized = this.normalizePath(path);
+    const normalized = this.sanitizePath(path);
     return this.files.has(normalized);
   }
 
   getNode(path: string): FileNode | null {
-    const normalized = this.normalizePath(path);
+    const normalized = this.sanitizePath(path);
     return this.files.get(normalized) || null;
   }
 
   listDirectory(path: string): FileNode[] | null {
-    const normalized = this.normalizePath(path);
+    const normalized = this.sanitizePath(path);
     const dir = this.files.get(normalized);
 
     if (!dir || dir.type !== "directory") {
@@ -295,6 +355,17 @@ export class VirtualFileSystem {
   }
 
   serialize(): Record<string, FileNode> {
+    if (this.serializedCache && this.cacheVersion === this.files.size) {
+      return JSON.parse(this.serializedCache);
+    }
+    
+    const result = this.computeSerialize();
+    this.serializedCache = JSON.stringify(result);
+    this.cacheVersion = this.files.size;
+    return result;
+  }
+
+  private computeSerialize(): Record<string, FileNode> {
     const result: Record<string, FileNode> = {};
 
     for (const [path, node] of this.files) {
@@ -316,6 +387,10 @@ export class VirtualFileSystem {
     }
 
     return result;
+  }
+
+  private invalidateCache(): void {
+    this.serializedCache = null;
   }
 
   deserialize(data: Record<string, string>): void {
@@ -517,6 +592,7 @@ export class VirtualFileSystem {
       children: new Map(),
     };
     this.files.set("/", this.root);
+    this.invalidateCache();
   }
 }
 

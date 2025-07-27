@@ -1,4 +1,8 @@
 import * as Babel from "@babel/standalone";
+import { LRUCache } from "@/lib/utils/lru-cache";
+
+const blobUrls = new Set<string>();
+const transformCache = new LRUCache<TransformResult>(100); // Cache last 100 transforms
 
 export interface TransformResult {
   code: string;
@@ -25,6 +29,15 @@ export function transformJSX(
   filename: string,
   existingFiles: Set<string>
 ): TransformResult {
+  // Create cache key based on code, filename, and existing files
+  const cacheKey = `${filename}:${code.length}:${Array.from(existingFiles).sort().join(',')}:${code.slice(0, 100)}`;
+  
+  // Check cache first
+  const cached = transformCache.get(cacheKey);
+  if (cached) {
+    return cached;
+  }
+
   try {
     const isTypeScript = filename.endsWith(".ts") || filename.endsWith(".tsx");
 
@@ -62,25 +75,47 @@ export function transformJSX(
       plugins: [],
     });
 
-    return {
+    const transformResult = {
       code: result.code || "",
       missingImports: imports,
       cssImports: cssImports,
     };
+    
+    // Cache the result
+    transformCache.set(cacheKey, transformResult);
+    return transformResult;
   } catch (error) {
-    return {
+    const errorResult = {
       code: "",
       error: error instanceof Error ? error.message : "Unknown transform error",
     };
+    
+    // Don't cache errors as they might be transient
+    return errorResult;
   }
 }
+
 
 export function createBlobURL(
   code: string,
   mimeType: string = "application/javascript"
 ): string {
   const blob = new Blob([code], { type: mimeType });
-  return URL.createObjectURL(blob);
+  const url = URL.createObjectURL(blob);
+  blobUrls.add(url);
+  return url;
+}
+
+export function cleanupBlobUrls(): void {
+  blobUrls.forEach(url => URL.revokeObjectURL(url));
+  blobUrls.clear();
+}
+
+export function revokeSpecificBlobUrl(url: string): void {
+  if (blobUrls.has(url)) {
+    URL.revokeObjectURL(url);
+    blobUrls.delete(url);
+  }
 }
 
 export interface ImportMapResult {

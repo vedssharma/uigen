@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useCallback } from "react";
+import { useState, useMemo, useCallback, memo } from "react";
 import { FileNode } from "@/lib/file-system";
 import { useFileSystem } from "@/lib/contexts/file-system-context";
 import {
@@ -18,7 +18,7 @@ interface FileTreeNodeProps {
   level: number;
 }
 
-function FileTreeNode({ node, level }: FileTreeNodeProps) {
+const FileTreeNode = memo(function FileTreeNode({ node, level }: FileTreeNodeProps) {
   const { selectedFile, setSelectedFile } = useFileSystem();
   const [isExpanded, setIsExpanded] = useState(true);
   
@@ -83,9 +83,9 @@ function FileTreeNode({ node, level }: FileTreeNodeProps) {
       )}
     </div>
   );
-}
+});
 
-export function FileTree() {
+export const FileTree = memo(function FileTree() {
   const { fileSystem, refreshTrigger } = useFileSystem();
   const rootNode = fileSystem.getNode("/");
 
@@ -119,4 +119,4 @@ export function FileTree() {
       </div>
     </ScrollArea>
   );
-}
+});

@@ -52,7 +52,7 @@ export function ChatProvider({
     onToolCall: ({ toolCall }) => {
       handleToolCall({
         toolName: toolCall.toolName,
-        args: toolCall.args as any,
+        args: toolCall.args as Record<string, unknown>,
       });
     },
   });

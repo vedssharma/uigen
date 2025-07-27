@@ -5,6 +5,7 @@ import { useFileSystem } from "@/lib/contexts/file-system-context";
 import {
   createImportMap,
   createPreviewHTML,
+  cleanupBlobUrls,
 } from "@/lib/transform/jsx-transformer";
 import { AlertCircle } from "lucide-react";
 
@@ -80,12 +81,22 @@ export function PreviewFrame() {
         if (iframeRef.current) {
           const iframe = iframeRef.current;
 
-          // Need both allow-scripts and allow-same-origin for blob URLs in import map
+          // More restrictive sandbox - remove allow-forms if not needed
+          // allow-scripts: needed for React to run
+          // allow-same-origin: needed for blob URLs in import map
           iframe.setAttribute(
             "sandbox",
-            "allow-scripts allow-same-origin allow-forms"
+            "allow-scripts allow-same-origin"
           );
-          iframe.srcdoc = previewHTML;
+          
+          // Add Content Security Policy for additional security
+          const secureHTML = previewHTML.replace(
+            '<head>',
+            `<head>
+              <meta http-equiv="Content-Security-Policy" content="default-src 'self' blob: data: https://esm.sh https://cdn.tailwindcss.com; script-src 'self' 'unsafe-inline' blob: https://esm.sh https://cdn.tailwindcss.com; style-src 'self' 'unsafe-inline' https://cdn.tailwindcss.com; connect-src 'self' blob: https://esm.sh; img-src 'self' data: blob:;">`
+          );
+          
+          iframe.srcdoc = secureHTML;
 
           setError(null);
         }
@@ -97,6 +108,13 @@ export function PreviewFrame() {
 
     updatePreview();
   }, [refreshTrigger, getAllFiles, entryPoint, error, isFirstLoad]);
+
+  // Cleanup blob URLs when component unmounts
+  useEffect(() => {
+    return () => {
+      cleanupBlobUrls();
+    };
+  }, []);
 
   if (error) {
     if (error === "firstLoad") {

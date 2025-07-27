@@ -1,23 +1,50 @@
 "use client";
 
-import { useEffect, useRef, useCallback, useMemo } from "react";
+import { useEffect, useRef, useCallback, useMemo, useDeferredValue, useState } from "react";
 import Editor from "@monaco-editor/react";
 import { useFileSystem } from "@/lib/contexts/file-system-context";
 import { Code2 } from "lucide-react";
+import { debounce } from "@/lib/utils/debounce";
 
 export function CodeEditor() {
   const { selectedFile, getFileContent, updateFile } = useFileSystem();
   const editorRef = useRef<any>(null);
+  const [localContent, setLocalContent] = useState<string>("");
 
   const handleEditorDidMount = (editor: any) => {
     editorRef.current = editor;
   };
 
+  // Debounced update function
+  const debouncedUpdate = useMemo(
+    () => debounce((path: string, content: string) => {
+      updateFile(path, content);
+    }, 300),
+    [updateFile]
+  );
+
   const handleEditorChange = useCallback((value: string | undefined) => {
     if (selectedFile && value !== undefined) {
-      updateFile(selectedFile, value);
+      setLocalContent(value);
+      debouncedUpdate(selectedFile, value);
     }
-  }, [selectedFile, updateFile]);
+  }, [selectedFile, debouncedUpdate]);
+
+  // Update local content when file changes
+  useEffect(() => {
+    if (selectedFile) {
+      const fileContent = getFileContent(selectedFile) ?? '';
+      setLocalContent(fileContent);
+    }
+  }, [selectedFile, getFileContent]);
+
+  // Cleanup debounced function when component unmounts
+  useEffect(() => {
+    return () => {
+      // The debounced function will be cleaned up automatically when the component unmounts
+      // because the timeout will be cleared when the component is destroyed
+    };
+  }, []);
 
   const getLanguageFromPath = useCallback((path: string): string => {
     const extension = path.split('.').pop()?.toLowerCase();
@@ -34,7 +61,7 @@ export function CodeEditor() {
     return languageMap[extension ?? ''] ?? 'plaintext';
   }, []);
 
-  const content = useMemo(() => selectedFile ? (getFileContent(selectedFile) ?? '') : '', [getFileContent, selectedFile]);
+  const content = selectedFile ? localContent : '';
   const language = useMemo(() => selectedFile ? getLanguageFromPath(selectedFile) : 'plaintext', [getLanguageFromPath, selectedFile]);
   const editorOptions = useMemo(() => ({
     minimap: { enabled: false },

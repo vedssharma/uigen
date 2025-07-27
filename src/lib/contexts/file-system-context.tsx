@@ -3,16 +3,31 @@
 import React, {
   createContext,
   useContext,
-  useState,
   useCallback,
   useEffect,
   useMemo,
 } from "react";
 import { VirtualFileSystem, FileNode } from "@/lib/file-system";
+import { useFileSystemReducer } from "@/lib/hooks/useFileSystemReducer";
+
+interface StrReplaceEditorArgs {
+  command?: "create" | "str_replace" | "insert";
+  path?: string;
+  file_text?: string;
+  old_str?: string;
+  new_str?: string;
+  insert_line?: number;
+}
+
+interface FileManagerArgs {
+  command?: "rename" | "delete";
+  path?: string;
+  new_path?: string;
+}
 
 interface ToolCall {
   toolName: string;
-  args: any;
+  args: StrReplaceEditorArgs | FileManagerArgs | Record<string, unknown>;
 }
 
 interface FileSystemContextType {
@@ -50,12 +65,8 @@ export function FileSystemProvider({
     }
     return fs;
   }, [providedFileSystem, initialData]);
-  const [selectedFile, setSelectedFile] = useState<string | null>(null);
-  const [refreshTrigger, setRefreshTrigger] = useState(0);
 
-  const triggerRefresh = useCallback(() => {
-    setRefreshTrigger((prev) => prev + 1);
-  }, []);
+  const { selectedFile, refreshTrigger, setSelectedFile, triggerRefresh, reset: resetState } = useFileSystemReducer();
 
   const autoSelectFile = useCallback(() => {
     if (selectedFile) return;
@@ -74,7 +85,7 @@ export function FileSystemProvider({
     if (rootFiles.length > 0) {
       setSelectedFile(rootFiles[0]);
     }
-  }, [selectedFile, fileSystem]);
+  }, [selectedFile, fileSystem, setSelectedFile]);
 
   useEffect(() => {
     autoSelectFile();
@@ -113,7 +124,7 @@ export function FileSystemProvider({
       }
       return success;
     },
-    [fileSystem, selectedFile, triggerRefresh]
+    [fileSystem, selectedFile, triggerRefresh, setSelectedFile]
   );
 
   const renameFile = useCallback(
@@ -132,7 +143,7 @@ export function FileSystemProvider({
       }
       return success;
     },
-    [fileSystem, selectedFile, triggerRefresh]
+    [fileSystem, selectedFile, triggerRefresh, setSelectedFile]
   );
 
   const getFileContent = useCallback(
@@ -148,9 +159,8 @@ export function FileSystemProvider({
 
   const reset = useCallback(() => {
     fileSystem.reset();
-    setSelectedFile(null);
-    triggerRefresh();
-  }, [fileSystem, triggerRefresh]);
+    resetState();
+  }, [fileSystem, resetState]);
 
   const handleToolCall = useCallback(
     (toolCall: ToolCall) => {
@@ -158,7 +168,8 @@ export function FileSystemProvider({
 
       // Handle str_replace_editor tool
       if (toolName === "str_replace_editor" && args) {
-        const { command, path, file_text, old_str, new_str, insert_line } = args;
+        const strArgs = args as StrReplaceEditorArgs;
+        const { command, path, file_text, old_str, new_str, insert_line } = strArgs;
 
         switch (command) {
           case "create":
@@ -192,7 +203,8 @@ export function FileSystemProvider({
 
       // Handle file_manager tool
       if (toolName === "file_manager" && args) {
-        const { command, path, new_path } = args;
+        const fileArgs = args as FileManagerArgs;
+        const { command, path, new_path } = fileArgs;
 
         switch (command) {
           case "rename":
@@ -215,7 +227,7 @@ export function FileSystemProvider({
         }
       }
     },
-    [fileSystem, renameFile, selectedFile, triggerRefresh]
+    [fileSystem, renameFile, selectedFile, triggerRefresh, setSelectedFile]
   );
 
   return (
