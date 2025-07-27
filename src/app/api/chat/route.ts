@@ -18,7 +18,10 @@ const MessageSchema = z.object({
 
 const FileNodeSchema = z.object({
   type: z.enum(["file", "directory"]),
-  name: z.string().min(1).max(255).regex(/^[^<>:"/\\|?*\x00-\x1f]+$/), // Sanitize file names
+  name: z.string().min(1).max(255).refine(
+    (name) => name === "/" || /^[^<>:"/\\|?*\x00-\x1f]+$/.test(name),
+    { message: "Invalid file name" }
+  ),
   path: z.string().min(1).max(1000).regex(/^\/[^<>:"|?*\x00-\x1f]*$/), // Sanitize paths
   content: z.string().max(1024 * 1024).optional(), // Limit file size to 1MB
 });
@@ -29,7 +32,10 @@ const ChatRequestSchema = z.object({
     (files) => Object.keys(files).length <= 50, // Limit number of files
     { message: "Too many files" }
   ),
-  projectId: z.string().uuid().optional(),
+  projectId: z.string().optional().refine(
+    (val) => !val || val === "" || z.string().uuid().safeParse(val).success,
+    { message: "Must be a valid UUID or empty string" }
+  ),
 });
 
 type ChatRequest = z.infer<typeof ChatRequestSchema>;
@@ -37,6 +43,7 @@ type ChatRequest = z.infer<typeof ChatRequestSchema>;
 export async function POST(req: Request) {
   try {
     const body = await req.json();
+    console.log("Received request body:", JSON.stringify(body, null, 2));
     const { messages, files, projectId } = ChatRequestSchema.parse(body);
 
     messages.unshift({
@@ -65,7 +72,7 @@ export async function POST(req: Request) {
         file_manager: buildFileManagerTool(fileSystem),
       },
       onFinish: async ({ response }) => {
-        if (!projectId) return;
+        if (!projectId || projectId === "") return;
         
         try {
           const session = await getSession();
@@ -99,6 +106,7 @@ export async function POST(req: Request) {
     return result.toDataStreamResponse();
   } catch (error) {
     if (error instanceof z.ZodError) {
+      console.error("Zod validation error:", error.errors);
       return new Response(
         JSON.stringify({
           error: "Invalid request format",

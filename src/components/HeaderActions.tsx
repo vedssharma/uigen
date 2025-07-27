@@ -99,7 +99,7 @@ export function HeaderActions({ user, projectId }: HeaderActionsProps) {
           <Button variant="outline" className="h-8" onClick={handleSignInClick}>
             Sign In
           </Button>
-          <Button className="h-8" onClick={handleSignUpClick}>
+          <Button className="h-8 bg-blue-700 hover:bg-blue-600 text-black" onClick={handleSignUpClick}>
             Sign Up
           </Button>
         </div>

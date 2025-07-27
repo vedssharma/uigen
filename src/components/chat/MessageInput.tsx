@@ -18,12 +18,15 @@ export function MessageInput({
   isLoading,
   disabled = false,
 }: MessageInputProps) {
-  const handleKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
+  const handleKeyDown = async (e: KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
-      const form = e.currentTarget.form;
-      if (form) {
-        form.requestSubmit();
+      if (!isLoading && input.trim()) {
+        const form = e.currentTarget.form;
+        if (form) {
+          const formEvent = new Event('submit', { bubbles: true, cancelable: true });
+          await handleSubmit(formEvent as any);
+        }
       }
     }
   };
