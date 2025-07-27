@@ -1,3 +1,6 @@
+/**
+ * @vitest-environment node
+ */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { NextRequest } from 'next/server';
 
@@ -24,6 +27,8 @@ describe('auth.ts', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    // Clear module cache to ensure fresh imports
+    vi.resetModules();
   });
 
   afterEach(() => {
@@ -32,6 +37,7 @@ describe('auth.ts', () => {
 
   describe('createSession', () => {
     it('should call cookies.set with correct parameters', async () => {
+      const originalNodeEnv = process.env.NODE_ENV;
       process.env.NODE_ENV = 'test';
       const { createSession } = await import('../auth');
       
@@ -50,9 +56,13 @@ describe('auth.ts', () => {
         path: '/',
       });
       expect(options.expires).toBeInstanceOf(Date);
+      
+      // Restore NODE_ENV
+      process.env.NODE_ENV = originalNodeEnv;
     });
 
     it('should set secure cookie in production environment', async () => {
+      const originalNodeEnv = process.env.NODE_ENV;
       process.env.NODE_ENV = 'production';
       const { createSession } = await import('../auth');
       
@@ -60,6 +70,9 @@ describe('auth.ts', () => {
 
       const [, , options] = mockCookies.set.mock.calls[0];
       expect(options.secure).toBe(true);
+      
+      // Restore NODE_ENV
+      process.env.NODE_ENV = originalNodeEnv;
     });
 
     it('should set cookie expiration to approximately 7 days', async () => {
