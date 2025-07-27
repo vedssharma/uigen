@@ -6,6 +6,7 @@ import React, {
   useState,
   useCallback,
   useEffect,
+  useMemo,
 } from "react";
 import { VirtualFileSystem, FileNode } from "@/lib/file-system";
 
@@ -40,15 +41,15 @@ export function FileSystemProvider({
 }: {
   children: React.ReactNode;
   fileSystem?: VirtualFileSystem;
-  initialData?: Record<string, any>;
+  initialData?: Record<string, FileNode>;
 }) {
-  const [fileSystem] = useState(() => {
+  const fileSystem = useMemo(() => {
     const fs = providedFileSystem || new VirtualFileSystem();
     if (initialData) {
       fs.deserializeFromNodes(initialData);
     }
     return fs;
-  });
+  }, [providedFileSystem, initialData]);
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
   const [refreshTrigger, setRefreshTrigger] = useState(0);
 
@@ -56,52 +57,61 @@ export function FileSystemProvider({
     setRefreshTrigger((prev) => prev + 1);
   }, []);
 
-  useEffect(() => {
-    if (!selectedFile) {
-      const files = fileSystem.getAllFiles();
-
-      // Check if App.jsx exists
-      if (files.has("/App.jsx")) {
-        setSelectedFile("/App.jsx");
-      } else {
-        // Find first file in root directory
-        const rootFiles = Array.from(files.keys())
-          .filter((path) => {
-            const parts = path.split("/").filter(Boolean);
-            return parts.length === 1; // Root level file
-          })
-          .sort();
-
-        if (rootFiles.length > 0) {
-          setSelectedFile(rootFiles[0]);
-        }
-      }
+  const autoSelectFile = useCallback(() => {
+    if (selectedFile) return;
+    
+    const files = fileSystem.getAllFiles();
+    
+    if (files.has("/App.jsx")) {
+      setSelectedFile("/App.jsx");
+      return;
     }
-  }, [selectedFile, fileSystem, refreshTrigger]);
+    
+    const rootFiles = Array.from(files.keys())
+      .filter((path) => !path.includes("/", 1))
+      .sort();
+    
+    if (rootFiles.length > 0) {
+      setSelectedFile(rootFiles[0]);
+    }
+  }, [selectedFile, fileSystem]);
+
+  useEffect(() => {
+    autoSelectFile();
+  }, [autoSelectFile, refreshTrigger]);
 
   const createFile = useCallback(
-    (path: string, content: string = "") => {
-      fileSystem.createFile(path, content);
-      triggerRefresh();
+    (path: string, content = "") => {
+      const success = fileSystem.createFile(path, content);
+      if (success) {
+        triggerRefresh();
+      }
+      return success;
     },
     [fileSystem, triggerRefresh]
   );
 
   const updateFile = useCallback(
     (path: string, content: string) => {
-      fileSystem.updateFile(path, content);
-      triggerRefresh();
+      const success = fileSystem.updateFile(path, content);
+      if (success) {
+        triggerRefresh();
+      }
+      return success;
     },
     [fileSystem, triggerRefresh]
   );
 
   const deleteFile = useCallback(
     (path: string) => {
-      fileSystem.deleteFile(path);
-      if (selectedFile === path) {
-        setSelectedFile(null);
+      const success = fileSystem.deleteFile(path);
+      if (success) {
+        if (selectedFile === path || (selectedFile && selectedFile.startsWith(path + "/"))) {
+          setSelectedFile(null);
+        }
+        triggerRefresh();
       }
-      triggerRefresh();
+      return success;
     },
     [fileSystem, selectedFile, triggerRefresh]
   );
@@ -155,7 +165,7 @@ export function FileSystemProvider({
             if (path && file_text !== undefined) {
               const result = fileSystem.createFileWithParents(path, file_text);
               if (!result.startsWith("Error:")) {
-                createFile(path, file_text);
+                triggerRefresh();
               }
             }
             break;
@@ -164,10 +174,7 @@ export function FileSystemProvider({
             if (path && old_str !== undefined && new_str !== undefined) {
               const result = fileSystem.replaceInFile(path, old_str, new_str);
               if (!result.startsWith("Error:")) {
-                const content = fileSystem.readFile(path);
-                if (content !== null) {
-                  updateFile(path, content);
-                }
+                triggerRefresh();
               }
             }
             break;
@@ -176,10 +183,7 @@ export function FileSystemProvider({
             if (path && new_str !== undefined && insert_line !== undefined) {
               const result = fileSystem.insertInFile(path, insert_line, new_str);
               if (!result.startsWith("Error:")) {
-                const content = fileSystem.readFile(path);
-                if (content !== null) {
-                  updateFile(path, content);
-                }
+                triggerRefresh();
               }
             }
             break;
@@ -201,14 +205,17 @@ export function FileSystemProvider({
             if (path) {
               const success = fileSystem.deleteFile(path);
               if (success) {
-                deleteFile(path);
+                if (selectedFile === path || (selectedFile && selectedFile.startsWith(path + "/"))) {
+                  setSelectedFile(null);
+                }
+                triggerRefresh();
               }
             }
             break;
         }
       }
     },
-    [fileSystem, createFile, updateFile, deleteFile, renameFile]
+    [fileSystem, renameFile, selectedFile, triggerRefresh]
   );
 
   return (

@@ -1,14 +1,21 @@
-// Simple utility to track if anonymous user has created work
 const STORAGE_KEY = "uigen_has_anon_work";
 const DATA_KEY = "uigen_anon_data";
+const MIN_MESSAGES_THRESHOLD = 0;
+const MIN_FILES_THRESHOLD = 1; // > 1 because root "/" always exists
 
-export function setHasAnonWork(messages: any[], fileSystemData: any) {
+export function setHasAnonWork(messages: unknown[], fileSystemData: Record<string, unknown>): void {
   if (typeof window === "undefined") return;
   
-  // Only set if there's actual content
-  if (messages.length > 0 || Object.keys(fileSystemData).length > 1) { // > 1 because root "/" always exists
-    sessionStorage.setItem(STORAGE_KEY, "true");
-    sessionStorage.setItem(DATA_KEY, JSON.stringify({ messages, fileSystemData }));
+  const hasContent = messages.length > MIN_MESSAGES_THRESHOLD || 
+                    Object.keys(fileSystemData).length > MIN_FILES_THRESHOLD;
+  
+  if (hasContent) {
+    try {
+      sessionStorage.setItem(STORAGE_KEY, "true");
+      sessionStorage.setItem(DATA_KEY, JSON.stringify({ messages, fileSystemData }));
+    } catch (error) {
+      console.warn('Failed to save anonymous work data:', error);
+    }
   }
 }
 
@@ -17,21 +24,28 @@ export function getHasAnonWork(): boolean {
   return sessionStorage.getItem(STORAGE_KEY) === "true";
 }
 
-export function getAnonWorkData(): { messages: any[], fileSystemData: any } | null {
+export function getAnonWorkData(): { messages: unknown[], fileSystemData: Record<string, unknown> } | null {
   if (typeof window === "undefined") return null;
   
   const data = sessionStorage.getItem(DATA_KEY);
   if (!data) return null;
   
   try {
-    return JSON.parse(data);
-  } catch {
+    const parsed = JSON.parse(data);
+    return parsed && typeof parsed === 'object' ? parsed : null;
+  } catch (error) {
+    console.warn('Failed to parse anonymous work data:', error);
     return null;
   }
 }
 
-export function clearAnonWork() {
+export function clearAnonWork(): void {
   if (typeof window === "undefined") return;
-  sessionStorage.removeItem(STORAGE_KEY);
-  sessionStorage.removeItem(DATA_KEY);
+  
+  try {
+    sessionStorage.removeItem(STORAGE_KEY);
+    sessionStorage.removeItem(DATA_KEY);
+  } catch (error) {
+    console.warn('Failed to clear anonymous work data:', error);
+  }
 }

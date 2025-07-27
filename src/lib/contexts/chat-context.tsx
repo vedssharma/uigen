@@ -5,6 +5,7 @@ import {
   useContext,
   ReactNode,
   useEffect,
+  useMemo,
 } from "react";
 import { useChat as useAIChat } from "@ai-sdk/react";
 import { Message } from "ai";
@@ -33,6 +34,8 @@ export function ChatProvider({
 }: ChatContextProps & { children: ReactNode }) {
   const { fileSystem, handleToolCall } = useFileSystem();
 
+  const serializedFiles = useMemo(() => fileSystem.serialize(), [fileSystem]);
+
   const {
     messages,
     input,
@@ -43,20 +46,22 @@ export function ChatProvider({
     api: "/api/chat",
     initialMessages,
     body: {
-      files: fileSystem.serialize(),
+      files: serializedFiles,
       projectId,
     },
     onToolCall: ({ toolCall }) => {
-      handleToolCall(toolCall);
+      handleToolCall({
+        toolName: toolCall.toolName,
+        args: toolCall.args as any,
+      });
     },
   });
 
-  // Track anonymous work
   useEffect(() => {
     if (!projectId && messages.length > 0) {
-      setHasAnonWork(messages, fileSystem.serialize());
+      setHasAnonWork(messages, serializedFiles);
     }
-  }, [messages, fileSystem, projectId]);
+  }, [messages, serializedFiles, projectId]);
 
   return (
     <ChatContext.Provider

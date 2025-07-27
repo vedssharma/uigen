@@ -8,13 +8,14 @@ import { getSession } from "@/lib/auth";
 import { getLanguageModel } from "@/lib/provider";
 import { generationPrompt } from "@/lib/prompts/generation";
 
+interface ChatRequest {
+  messages: any[];
+  files: Record<string, FileNode>;
+  projectId?: string;
+}
+
 export async function POST(req: Request) {
-  const {
-    messages,
-    files,
-    projectId,
-  }: { messages: any[]; files: Record<string, FileNode>; projectId?: string } =
-    await req.json();
+  const { messages, files, projectId }: ChatRequest = await req.json();
 
   messages.unshift({
     role: "system",
@@ -24,18 +25,19 @@ export async function POST(req: Request) {
     },
   });
 
-  // Reconstruct the VirtualFileSystem from serialized data
   const fileSystem = new VirtualFileSystem();
-  fileSystem.deserializeFromNodes(files);
+  if (files && Object.keys(files).length > 0) {
+    fileSystem.deserializeFromNodes(files);
+  }
 
   const model = getLanguageModel();
-  // Use fewer steps for mock provider to prevent repetition
   const isMockProvider = !process.env.ANTHROPIC_API_KEY;
+  const maxSteps = isMockProvider ? 4 : 40;
   const result = streamText({
     model,
     messages,
     maxTokens: 10_000,
-    maxSteps: isMockProvider ? 4 : 40,
+    maxSteps,
     onError: (err: any) => {
       console.error(err);
     },
@@ -44,37 +46,33 @@ export async function POST(req: Request) {
       file_manager: buildFileManagerTool(fileSystem),
     },
     onFinish: async ({ response }) => {
-      // Save to project if projectId is provided and user is authenticated
-      if (projectId) {
-        try {
-          // Check if user is authenticated
-          const session = await getSession();
-          if (!session) {
-            console.error("User not authenticated, cannot save project");
-            return;
-          }
-
-          // Get the messages from the response
-          const responseMessages = response.messages || [];
-          // Combine original messages with response messages
-          const allMessages = appendResponseMessages({
-            messages: [...messages.filter((m) => m.role !== "system")],
-            responseMessages,
-          });
-
-          await prisma.project.update({
-            where: {
-              id: projectId,
-              userId: session.userId,
-            },
-            data: {
-              messages: JSON.stringify(allMessages),
-              data: JSON.stringify(fileSystem.serialize()),
-            },
-          });
-        } catch (error) {
-          console.error("Failed to save project data:", error);
+      if (!projectId) return;
+      
+      try {
+        const session = await getSession();
+        if (!session) {
+          console.error("User not authenticated, cannot save project");
+          return;
         }
+
+        const responseMessages = response.messages || [];
+        const allMessages = appendResponseMessages({
+          messages: [...messages.filter((m: any) => m.role !== "system")],
+          responseMessages,
+        });
+
+        await prisma.project.update({
+          where: {
+            id: projectId,
+            userId: session.userId,
+          },
+          data: {
+            messages: JSON.stringify(allMessages),
+            data: JSON.stringify(fileSystem.serialize()),
+          },
+        });
+      } catch (error) {
+        console.error("Failed to save project data:", error);
       }
     },
   });

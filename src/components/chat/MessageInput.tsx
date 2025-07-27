@@ -8,6 +8,7 @@ interface MessageInputProps {
   handleInputChange: (e: ChangeEvent<HTMLTextAreaElement>) => void;
   handleSubmit: (e: FormEvent<HTMLFormElement>) => void;
   isLoading: boolean;
+  disabled?: boolean;
 }
 
 export function MessageInput({
@@ -15,6 +16,7 @@ export function MessageInput({
   handleInputChange,
   handleSubmit,
   isLoading,
+  disabled = false,
 }: MessageInputProps) {
   const handleKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === "Enter" && !e.shiftKey) {

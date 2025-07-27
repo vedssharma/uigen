@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useCallback, useMemo } from "react";
 import Editor from "@monaco-editor/react";
 import { useFileSystem } from "@/lib/contexts/file-system-context";
 import { Code2 } from "lucide-react";
@@ -13,33 +13,43 @@ export function CodeEditor() {
     editorRef.current = editor;
   };
 
-  const handleEditorChange = (value: string | undefined) => {
+  const handleEditorChange = useCallback((value: string | undefined) => {
     if (selectedFile && value !== undefined) {
       updateFile(selectedFile, value);
     }
-  };
+  }, [selectedFile, updateFile]);
 
-  const getLanguageFromPath = (path: string): string => {
+  const getLanguageFromPath = useCallback((path: string): string => {
     const extension = path.split('.').pop()?.toLowerCase();
-    switch (extension) {
-      case 'js':
-      case 'jsx':
-        return 'javascript';
-      case 'ts':
-      case 'tsx':
-        return 'typescript';
-      case 'json':
-        return 'json';
-      case 'css':
-        return 'css';
-      case 'html':
-        return 'html';
-      case 'md':
-        return 'markdown';
-      default:
-        return 'plaintext';
-    }
-  };
+    const languageMap: Record<string, string> = {
+      js: 'javascript',
+      jsx: 'javascript',
+      ts: 'typescript',
+      tsx: 'typescript',
+      json: 'json',
+      css: 'css',
+      html: 'html',
+      md: 'markdown',
+    };
+    return languageMap[extension ?? ''] ?? 'plaintext';
+  }, []);
+
+  const content = useMemo(() => selectedFile ? (getFileContent(selectedFile) ?? '') : '', [getFileContent, selectedFile]);
+  const language = useMemo(() => selectedFile ? getLanguageFromPath(selectedFile) : 'plaintext', [getLanguageFromPath, selectedFile]);
+  const editorOptions = useMemo(() => ({
+    minimap: { enabled: false },
+    fontSize: 14,
+    lineNumbers: 'on' as const,
+    roundedSelection: false,
+    scrollBeyondLastLine: false,
+    readOnly: false,
+    automaticLayout: true,
+    wordWrap: 'on' as const,
+    padding: { top: 16, bottom: 16 },
+    tabSize: 2,
+    insertSpaces: true,
+    detectIndentation: false,
+  }), []);
 
   if (!selectedFile) {
     return (
@@ -57,9 +67,6 @@ export function CodeEditor() {
     );
   }
 
-  const content = getFileContent(selectedFile) || '';
-  const language = getLanguageFromPath(selectedFile);
-
   return (
     <Editor
       height="100%"
@@ -68,17 +75,7 @@ export function CodeEditor() {
       onChange={handleEditorChange}
       onMount={handleEditorDidMount}
       theme="vs-dark"
-      options={{
-        minimap: { enabled: false },
-        fontSize: 14,
-        lineNumbers: 'on',
-        roundedSelection: false,
-        scrollBeyondLastLine: false,
-        readOnly: false,
-        automaticLayout: true,
-        wordWrap: 'on',
-        padding: { top: 16, bottom: 16 },
-      }}
+      options={editorOptions}
     />
   );
 }

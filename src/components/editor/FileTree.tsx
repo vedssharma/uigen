@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useMemo, useCallback } from "react";
 import { FileNode } from "@/lib/file-system";
 import { useFileSystem } from "@/lib/contexts/file-system-context";
 import {
@@ -21,32 +21,34 @@ interface FileTreeNodeProps {
 function FileTreeNode({ node, level }: FileTreeNodeProps) {
   const { selectedFile, setSelectedFile } = useFileSystem();
   const [isExpanded, setIsExpanded] = useState(true);
+  
+  const isSelected = selectedFile === node.path;
 
-  const handleClick = () => {
+  const handleClick = useCallback(() => {
     if (node.type === "directory") {
-      setIsExpanded(!isExpanded);
+      setIsExpanded(prev => !prev);
     } else {
       setSelectedFile(node.path);
     }
-  };
+  }, [node.type, node.path, setSelectedFile]);
 
-  const children =
-    node.type === "directory" && node.children
-      ? Array.from(node.children.values()).sort((a, b) => {
-          // Directories first, then files
-          if (a.type !== b.type) {
-            return a.type === "directory" ? -1 : 1;
-          }
-          return a.name.localeCompare(b.name);
-        })
-      : [];
+  const children = useMemo(() => {
+    if (node.type !== "directory" || !node.children) return [];
+    
+    return Array.from(node.children.values()).sort((a, b) => {
+      if (a.type !== b.type) {
+        return a.type === "directory" ? -1 : 1;
+      }
+      return a.name.localeCompare(b.name);
+    });
+  }, [node.type, node.children]);
 
   return (
     <div>
       <div
         className={cn(
           "flex items-center gap-2 px-2 py-1.5 hover:bg-gray-100 cursor-pointer text-sm transition-colors",
-          selectedFile === node.path && "bg-blue-50 text-blue-600"
+          isSelected && "bg-blue-50 text-blue-600"
         )}
         style={{ paddingLeft: `${level * 12 + 8}px` }}
         onClick={handleClick}
@@ -87,6 +89,17 @@ export function FileTree() {
   const { fileSystem, refreshTrigger } = useFileSystem();
   const rootNode = fileSystem.getNode("/");
 
+  const rootChildren = useMemo(() => {
+    if (!rootNode?.children) return [];
+    
+    return Array.from(rootNode.children.values()).sort((a, b) => {
+      if (a.type !== b.type) {
+        return a.type === "directory" ? -1 : 1;
+      }
+      return a.name.localeCompare(b.name);
+    });
+  }, [rootNode?.children]);
+
   if (!rootNode || !rootNode.children || rootNode.children.size === 0) {
     return (
       <div className="flex flex-col items-center justify-center h-full p-4 text-center">
@@ -96,13 +109,6 @@ export function FileTree() {
       </div>
     );
   }
-
-  const rootChildren = Array.from(rootNode.children.values()).sort((a, b) => {
-    if (a.type !== b.type) {
-      return a.type === "directory" ? -1 : 1;
-    }
-    return a.name.localeCompare(b.name);
-  });
 
   return (
     <ScrollArea className="h-full">

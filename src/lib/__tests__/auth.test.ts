@@ -38,7 +38,7 @@ describe('auth.ts', () => {
   describe('createSession', () => {
     it('should call cookies.set with correct parameters', async () => {
       const originalNodeEnv = process.env.NODE_ENV;
-      process.env.NODE_ENV = 'test';
+      (process.env as any).NODE_ENV = 'test';
       const { createSession } = await import('../auth');
       
       await createSession(TEST_USER_ID, TEST_EMAIL);
@@ -58,12 +58,12 @@ describe('auth.ts', () => {
       expect(options.expires).toBeInstanceOf(Date);
       
       // Restore NODE_ENV
-      process.env.NODE_ENV = originalNodeEnv;
+      (process.env as any).NODE_ENV = originalNodeEnv;
     });
 
     it('should set secure cookie in production environment', async () => {
       const originalNodeEnv = process.env.NODE_ENV;
-      process.env.NODE_ENV = 'production';
+      (process.env as any).NODE_ENV = 'production';
       const { createSession } = await import('../auth');
       
       await createSession(TEST_USER_ID, TEST_EMAIL);
@@ -72,7 +72,7 @@ describe('auth.ts', () => {
       expect(options.secure).toBe(true);
       
       // Restore NODE_ENV
-      process.env.NODE_ENV = originalNodeEnv;
+      (process.env as any).NODE_ENV = originalNodeEnv;
     });
 
     it('should set cookie expiration to approximately 7 days', async () => {

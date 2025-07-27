@@ -6,6 +6,17 @@ export interface FileNode {
   children?: Map<string, FileNode>;
 }
 
+export interface SerializedFileNode {
+  type: "file" | "directory";
+  name: string;
+  path: string;
+  content?: string;
+}
+
+const ROOT_PATH = "/";
+const PATH_SEPARATOR = "/";
+const DEFAULT_FILE_CONTENT = "";
+
 export class VirtualFileSystem {
   private files: Map<string, FileNode> = new Map();
   private root: FileNode;
@@ -21,32 +32,27 @@ export class VirtualFileSystem {
   }
 
   private normalizePath(path: string): string {
-    // Ensure path starts with /
-    if (!path.startsWith("/")) {
-      path = "/" + path;
+    if (!path.startsWith(PATH_SEPARATOR)) {
+      path = PATH_SEPARATOR + path;
     }
-    // Remove trailing slash except for root
-    if (path !== "/" && path.endsWith("/")) {
+    if (path !== ROOT_PATH && path.endsWith(PATH_SEPARATOR)) {
       path = path.slice(0, -1);
     }
-    // Normalize multiple slashes
-    path = path.replace(/\/+/g, "/");
-    return path;
+    return path.replace(/\/+/g, PATH_SEPARATOR);
   }
 
   private getParentPath(path: string): string {
     const normalized = this.normalizePath(path);
-    if (normalized === "/") return "/";
-    const parts = normalized.split("/");
-    parts.pop();
-    return parts.length === 1 ? "/" : parts.join("/");
+    if (normalized === ROOT_PATH) return ROOT_PATH;
+    const lastSlashIndex = normalized.lastIndexOf(PATH_SEPARATOR);
+    return lastSlashIndex <= 0 ? ROOT_PATH : normalized.substring(0, lastSlashIndex);
   }
 
   private getFileName(path: string): string {
     const normalized = this.normalizePath(path);
-    if (normalized === "/") return "/";
-    const parts = normalized.split("/");
-    return parts[parts.length - 1];
+    if (normalized === ROOT_PATH) return ROOT_PATH;
+    const lastSlashIndex = normalized.lastIndexOf(PATH_SEPARATOR);
+    return lastSlashIndex === -1 ? normalized : normalized.substring(lastSlashIndex + 1);
   }
 
   private getParentNode(path: string): FileNode | null {
@@ -54,7 +60,7 @@ export class VirtualFileSystem {
     return this.files.get(parentPath) || null;
   }
 
-  createFile(path: string, content: string = ""): FileNode | null {
+  createFile(path: string, content: string = DEFAULT_FILE_CONTENT): FileNode | null {
     const normalized = this.normalizePath(path);
 
     // Check if file already exists
@@ -127,7 +133,7 @@ export class VirtualFileSystem {
       return null;
     }
 
-    return file.content || "";
+    return file.content ?? DEFAULT_FILE_CONTENT;
   }
 
   updateFile(path: string, content: string): boolean {
@@ -418,7 +424,7 @@ export class VirtualFileSystem {
     );
   }
 
-  createFileWithParents(path: string, content: string = ""): string {
+  createFileWithParents(path: string, content: string = DEFAULT_FILE_CONTENT): string {
     // Check if file already exists
     if (this.exists(path)) {
       return `Error: File already exists: ${path}`;
@@ -465,7 +471,7 @@ export class VirtualFileSystem {
     ).length;
 
     // Replace all occurrences
-    const updatedContent = content.split(oldStr).join(newStr || "");
+    const updatedContent = content.split(oldStr).join(newStr ?? DEFAULT_FILE_CONTENT);
     this.updateFile(path, updatedContent);
 
     return `Replaced ${occurrences} occurrence(s) of the string in ${path}`;
@@ -494,7 +500,7 @@ export class VirtualFileSystem {
     }
 
     // Insert the text
-    lines.splice(insertLine, 0, text || "");
+    lines.splice(insertLine, 0, text ?? DEFAULT_FILE_CONTENT);
     const updatedContent = lines.join("\n");
     this.updateFile(path, updatedContent);
 
